@@ -396,6 +396,7 @@ textarea.kt.napbox{min-height:330px}
 
 /* v3.2 AUSkey writing */
 .sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionhead h2{margin:0}.napclock{font-variant-numeric:tabular-nums;color:var(--c);font-size:.8em;white-space:nowrap}.planfields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.planfield{display:flex;flex-direction:column;gap:4px}.planfield.required{border:3px solid #ffd166;border-radius:14px;padding:8px;background:#fffaf0}.planfield textarea{width:100%;min-height:58px;resize:vertical}.planfield small{color:var(--muted);font-weight:700}.idea-line{background:#eef8ff;border-radius:12px;padding:10px;font-weight:700}.hintbox{margin-top:12px;padding:10px 14px;background:#fff8d8;border-radius:14px;color:#684f00;font-weight:700}.hintbox p{margin:3px 0}.photoadd{display:block;margin-top:12px;padding:12px;border:2px dashed var(--c);border-radius:12px;font-weight:800;cursor:pointer}.photoadd input{display:block;margin-top:6px}.phasebuttons{flex-wrap:wrap;margin-top:14px}@media(max-width:700px){.planfields{grid-template-columns:1fr}.sectionhead{align-items:flex-start;flex-direction:column}}
+.sharehelp{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:12px 16px;margin:0 auto 16px;max-width:1000px;background:#eaf7ff;border:2px solid #8bd0f5;border-radius:16px;font-weight:700}.sharehelp span{flex:1;min-width:260px}.shareline{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px}.shareparent{border:3px solid #8bd0f5;background:#f3fbff}
 </style>
 </head>
 <body>
@@ -413,8 +414,8 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.2.1';
-const APP_TAG = '3.2.1-writing-auskey';
+const APP_VERSION = '3.3';
+const APP_TAG = '3.3-drive-plus-share';
 const DATA_VERSION = 4; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
@@ -909,6 +910,37 @@ async function changePin() {
   D.pin = p1; D.pinChanged = true; save(); toast('🔐 New PIN saved'); return true;
 }
 
+/* ---------- v3.3: optional iOS share backup for Henry writing ---------- */
+const SHARE_HELP_KEY = 'holidayQuest.shareHelpSeen';
+function shareNaps() {
+  const out = [];
+  for (const kid of D.kids) for (const [dk, r] of Object.entries(D.days[kid.id] || {}))
+    if (r && r.nap && r.nap.s === 'done' && !r.nap.shareAt) out.push({ kid, dk, n: r.nap });
+  return out.sort((a,b) => a.dk < b.dk ? -1 : a.dk > b.dk ? 1 : 0);
+}
+function shareEntryData(kid, dk, n) {
+  const plan = napPlan(n), hints = n.hints || napHints(n), text = String(n.text || '');
+  return { id: driveId(kid,'n',dk,n), entryId: driveId(kid,'n',dk,n), date: dk, dateTimePerth: driveIso(n.okAt || n.sentAt || now()), prompt: { title: n.title || '', text: n.prompt || '', type: n.type || 'narrative', trip: !!n.trip }, plan, story: text, wordCount: wordCount(text), paragraphCount: text.split(/\n\s*\n/).filter(x => x.trim()).length, selfCheckTicks: Array.isArray(n.checks) ? n.checks : [], autoHintFlags: hints, timeTaken: n.timeTaken || {}, app: APP_TAG, timezone: 'Australia/Perth' };
+}
+function shareFileName(kid, dk, n) { return `henry-writing-${dk}-${driveId(kid,'n',dk,n)}.json`; }
+function dataUrlBlob(data, name) { const m = String(data || '').match(/^data:([^;]+);base64,(.+)$/); if (!m) return null; const bin = atob(m[2]), a = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); return new File([a], name, { type: m[1] || 'image/jpeg' }); }
+function downsizePhoto(data, name) {
+  return new Promise(resolve => { if (!data) return resolve(null); const img = new Image(); img.onload = () => { const scale = Math.min(1, 2000 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height)); const c = document.createElement('canvas'); c.width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale)); c.height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale)); const x = c.getContext('2d'); x.drawImage(img,0,0,c.width,c.height); c.toBlob(b => resolve(b ? new File([b], name, {type:'image/jpeg'}) : dataUrlBlob(data,name)), 'image/jpeg', .86); }; img.onerror = () => resolve(dataUrlBlob(data,name)); img.src = data; });
+}
+function downloadShareFile(file) { const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1200); }
+async function shareNapEntry(kid, dk, n) {
+  if (!kid || !n) return false;
+  const stem = `henry-writing-${dk}-${driveId(kid,'n',dk,n)}`, json = new File([JSON.stringify(shareEntryData(kid,dk,n), null, 2)], stem + '.json', {type:'application/json'}), files = [json];
+  if (n.photo) { const photo = await downsizePhoto(n.photo, stem + '-photo.jpg'); if (photo) files.push(photo); }
+  let saved = false, method = '';
+  try {
+    if (navigator.share && (!navigator.canShare || navigator.canShare({files}))) { await navigator.share({ files, title: 'Henry writing', text: 'Holiday Quest · Henry Writing' }); saved = true; method = 'share-sheet'; }
+  } catch (e) { if (e && e.name === 'AbortError') { toast('Share cancelled — your writing is still safe on this iPad.'); return false; } }
+  if (!saved) { files.forEach(downloadShareFile); saved = true; method = 'download'; toast('📥 Files downloaded — choose Save to Files, then Google Drive.'); }
+  if (saved) { n.shareAt = now(); n.shareMethod = method; save(); render(); toast(method === 'share-sheet' ? '✅ Saved — choose Google Drive in the share sheet.' : '✅ Writing files saved.'); return true; }
+  return false;
+}
+function shareHelpHtml() { return localStorage.getItem(SHARE_HELP_KEY) ? '' : `<div class="sharehelp" data-sharehelp><b>☁️ Backup save tip</b><span>Tap <b>Save to Files</b>, then <b>Google Drive</b>, then <b>Holiday Quest</b>, then <b>Henry Writing</b>.</span><button class="btn ghost small" data-act="sharehelp">Got it</button></div>`; }
 /* ---------- views ---------- */
 function render() {
   if (S.view === 'parent' && now() > S.parentUntil) S.view = 'home';
@@ -1323,7 +1355,7 @@ function naplanCard(kid, dk) {
     <div class="tbody"><div class="tname">NAPLAN writing</div>
       <div class="tnote">${st.emoji} ${esc(st.label)}: <b>${esc(n.title)}</b></div>
       <span class="chip" data-naptok="${D.rules.napTokens}">+${D.rules.napTokens} 🪙${wc ? ' · ' + wc + ' words' : ''}${n.back && n.s === 'todo' ? ' · ↩️ add a bit more' : ''}</span></div>
-    <div class="tact">${action}</div>
+    <div class="tact">${action}${n.s !== 'todo' ? `<button class="btn ghost small" data-act="napshare">☁️ ${n.shareAt ? 'Saved to Drive' : 'Save to Google Drive'}</button>` : ''}</div>
   </div>`;
 }
 
@@ -1412,7 +1444,7 @@ function viewNaplan() {
   const checkCard = `<section class="card ga-c" data-sec="check"><div class="sectionhead"><h2>✅ CHECK · ${napTimer(n,'check')}</h2><span class="chip">5 minutes</span></div><p class="sub">Tick each check you really did.</p><div class="checks">${NAP_CHECKS.map((c,i)=>`<button class="cbox ${n.checks.includes(i)?'on':''}" data-act="napcheck" data-i="${i}" ${locked?'disabled':''} aria-pressed="${n.checks.includes(i)}">${n.checks.includes(i)?'✅':'⬜'} ${esc(c)}</button>`).join('')}</div>${napHintHtml(n)}<p class="sub">Personal word list: ${HENRY_WORDS.slice(0,7).join(' · ')}</p></section>`;
   const promptCard = `<section class="card napprompt ga-p" data-sec="prompt"><div class="kmeta"><span class="chip ok">${st.emoji} ${esc(st.label)}</span>${n.trip?'<span class="chip soon">🧳 From our trip</span>':''}${n.auskey?'<span class="chip">🗝️ AUSkey practice</span>':''}</div><h2 style="margin-top:10px">${esc(n.title)}</h2><p class="idea-line">🖼️ Picture idea: imagine the place, character and problem in your mind.</p><div class="qlabel" style="margin-top:6px"><span class="qtext">${esc(n.prompt)}</span>${sayBtn(n.title+'. '+n.prompt)}</div>${locked?'':`<div class="btnrow"><button class="btn ghost small" data-act="napshuffle" ${n.shuffled?'disabled':''}>🔀 ${n.shuffled?'New prompt used today':'New prompt (1 a day)'}</button></div>`}</section>`;
   const writeCard = locked ? `<section class="card ga-w" data-sec="write"><h2>${n.s==='done'?'✅ Mum/Dad checked it — brilliant writing!':'⏳ Waiting for Mum/Dad to check'}</h2>${napQA(n)}<div class="btnrow"><button class="btn primary" data-act="kidback">⬅️ Back to my jobs</button></div></section>` : `<section class="card ga-w" data-sec="write"><div class="sectionhead"><h2>📝 WRITE · ${napTimer(n,'write')}</h2><span class="chip">30 minutes</span></div><textarea class="kt napbox" data-bind="nap:text" autocapitalize="sentences" autocorrect="on" spellcheck="true" placeholder="Write your story here…" aria-label="My writing">${esc(n.text)}</textarea>${wcHtml('nap:text',wc,NAP_MIN_WORDS,NAP_MAX_WORDS)}<p class="sub" data-paragraphs>📑 ${String(n.text||'').split(/\n\s*\n/).filter(x=>x.trim()).length} paragraphs</p><label class="photoadd">📷 Add photo of handwriting<input type="file" accept="image/*" capture="environment" data-act="napphoto" ${n.photo?'data-hasphoto="1"':''}></label>${n.photo?'<p class="small-print">✅ Handwriting photo saved on this iPad and queued with the writing.</p>':''}<button class="cbox paperbox ${n.paper?'on':''}" data-act="nappaper" aria-pressed="${n.paper}">${n.paper?'✅':'⬜'} 📝 I wrote it on paper</button>${napHintHtml(n)}<div class="btnrow phasebuttons">${napPhaseButton(n,'plan','🧱 Plan')}${napPhaseButton(n,'write','📝 Write')}${napPhaseButton(n,'check','✅ Check')}</div><div class="btnrow submitrow"><button class="btn ok bigsubmit" data-act="napsubmit" data-ready="nap" ${napReady(n)?'':'disabled'}>✅ Finished! Ask Mum/Dad to check</button></div><p class="small-print" data-live="naphint" style="visibility:${napReady(n)?'hidden':'visible'}">Write at least ${NAP_SUBMIT_MIN} words (or tick “I wrote it on paper”). Your best effort is what counts!</p></section>`;
-  return `<div class="kid wview theme-${esc(kid.color)}" data-view="naplan">${head}${n.back&&n.s==='todo'?'<div class="banner">↩️ Mum or Dad asked you to add a little bit more. You can do it! 💪</div>':''}<div class="wgrid">${promptCard}${planCard}${writeCard}${checkCard}</div></div>`;
+  return `<div class="kid wview theme-${esc(kid.color)}" data-view="naplan">${head}${shareHelpHtml()}${n.back&&n.s==='todo'?'<div class="banner">↩️ Mum or Dad asked you to add a little bit more. You can do it! 💪</div>':''}<div class="wgrid">${promptCard}${planCard}${writeCard}${checkCard}</div></div>`;
 }
 
 /* ---------- answers for grown-ups (check screen, history) ---------- */
@@ -1424,7 +1456,7 @@ function bookQA(b) {
 }
 function napQA(n) {
   const txt = String(n.text || '').trim(), st = NAP_STRUCT[n.type] || NAP_STRUCT.narrative, p = napPlan(n);
-  return `<div class="qa" data-qa="nap"><div class="qt">✍️ <b>${esc(n.title)}</b> <span class="chip">${st.emoji} ${esc(st.label)}</span></div><div class="q">${esc(n.prompt)}</div><h3>Plan</h3>${[['Beginning',p.orientation],['Problem',p.complication],['Main event',p.mainEvent],['Solution',p.solution],['Ending',p.resolution]].map(x=>`<div class="a"><b>${x[0]}:</b> ${esc(x[1]||'—')}</div>`).join('')}<div class="a">${txt?esc(txt):''}${n.paper?`<span class="paper">📝 ${txt?'Also written':'Written'} on paper — please have a look</span>`:txt?'':'—'}</div><div class="q">${wordCount(txt)} words · ${String(txt).split(/\n\s*\n/).filter(x=>x.trim()).length} paragraphs · checklist ticked ${n.checks.length}/${NAP_CHECKS.length}</div></div>`;
+  return `<div class="qa" data-qa="nap"><div class="qt">✍️ <b>${esc(n.title)}</b> <span class="chip">${st.emoji} ${esc(st.label)}</span></div><div class="q">${esc(n.prompt)}</div><h3>Plan</h3>${[['Beginning',p.orientation],['Problem',p.complication],['Main event',p.mainEvent],['Solution',p.solution],['Ending',p.resolution]].map(x=>`<div class="a"><b>${x[0]}:</b> ${esc(x[1]||'—')}</div>`).join('')}<div class="a">${txt?esc(txt):''}${n.paper?`<span class="paper">📝 ${txt?'Also written':'Written'} on paper — please have a look</span>`:txt?'':'—'}</div><div class="q">${wordCount(txt)} words · ${String(txt).split(/\n\s*\n/).filter(x=>x.trim()).length} paragraphs · checklist ticked ${n.checks.length}/${NAP_CHECKS.length}</div><div class="shareline"><span class="chip ${n.shareAt?'ok':'soon'}">${n.shareAt?'✅ Saved to Drive':'☁️ Not saved to Drive'}</span><button class="btn ghost small" data-act="napshare">☁️ Save to Google Drive</button></div></div>`;
 }
 
 /* ---------- live updates while typing (no full re-render → keyboard stays up) ---------- */
@@ -1612,7 +1644,7 @@ function viewParent() {
     <div class="pgrid">${body}</div></div>`;
 }
 function pCheck() {
-  const dk = S.today; let chips = '';
+  const dk = S.today; let chips = ''; const unsaved = shareNaps();
   for (let i = -1; i < 7; i++) {
     const k = addDays(dk, i), d = fromKey(k);
     chips += `<button class="daychip ${isOuting(k) ? 'on' : ''} ${i === 0 ? 'today' : ''}" data-act="outing" data-d="${k}" aria-pressed="${isOuting(k)}">
@@ -1620,7 +1652,7 @@ function pCheck() {
   }
   const outNames = D.kids.map(k => { const o = k.tasks.filter(t => t.type === 'daily' && t.outing).map(t => t.name); return `${esc(k.name)}: ${o.length ? esc(o.join(' + ')) : 'no jobs'}`; }).join(' · ');
   const pw = pendingGoals();
-  return `${pw.length ? `<section class="card wishwait" data-wishwait="${pw.length}"><h2>🎯 Wishes waiting for you (${pw.length})</h2><div class="clist">${pw.map(wishRow).join('')}</div></section>` : ''}
+  return `${unsaved.length ? `<section class="card shareparent"><h2>☁️ ${unsaved.length} writing piece${unsaved.length===1?'':'s'} not saved to Google Drive</h2><p class="sub">Backup sharing uses the iPad share sheet. The automatic Apps Script upload still runs separately.</p><button class="btn primary" data-act="shareall">☁️ Save all unsaved</button></section>` : ''}${pw.length ? `<section class="card wishwait" data-wishwait="${pw.length}"><h2>🎯 Wishes waiting for you (${pw.length})</h2><div class="clist">${pw.map(wishRow).join('')}</div></section>` : ''}
     <section class="card"><h2>🚗 Outing days</h2><p class="sub">Tap a day to switch it on/off. On outing days only jobs marked 🚗 are must-dos — ${outNames}.</p><div class="daychips">${chips}</div></section>
     <div class="pgrid two">${D.kids.map(pKidCheck).join('')}</div>`;
 }
@@ -2366,6 +2398,9 @@ const ACT = {
   sayq(el) { speak(el.dataset.say); },
   naplan() { const kid = curKid(); if (!kid || !kid.naplan) return; flushSave(); S.view = 'naplan'; window.scrollTo(0, 0); render(); },
   napcheck(el) { const n = napFor(curKid(), S.today, false); if (!n || n.s !== 'todo') return; const i = +el.dataset.i; n.checks = n.checks.includes(i) ? n.checks.filter(x => x !== i) : n.checks.concat(i).sort(); save(); render(); },
+  async napshare() { const kid=curKid(), n=napFor(kid,S.today,false); if (kid && n) await shareNapEntry(kid,S.today,n); },
+  sharehelp() { try { localStorage.setItem(SHARE_HELP_KEY,'1'); } catch(e) {} render(); },
+  async shareall() { const list=shareNaps(); if (!list.length) { toast('✅ No unsaved writing'); return; } for (const x of list) { const ok=await shareNapEntry(x.kid,x.dk,x.n); if (!ok) break; } },
   napphase(el) {
     const n = napFor(curKid(), S.today, false); if (!n || n.s !== 'todo') return;
     const phase = el.dataset.phase, old = n.phase || 'plan';
