@@ -251,6 +251,7 @@ textarea{width:100%;min-height:120px;border-radius:16px;border:2px solid var(--l
 .small-print{font-size:16px;color:var(--muted);margin-top:8px;line-height:1.35}
 #toast{position:fixed;left:50%;bottom:calc(28px + env(safe-area-inset-bottom));transform:translateX(-50%) translateY(200%);background:var(--ink);color:#fff;padding:16px 26px;border-radius:20px;font-weight:800;font-size:21px;z-index:90;transition:transform .25s;max-width:90vw;text-align:center;pointer-events:none}
 #toast.show{transform:translateX(-50%) translateY(0)}
+#toast:empty{display:none}
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:80;width:100vw;height:100vh}
 
 
@@ -412,8 +413,8 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.2';
-const APP_TAG = '3.2-writing-auskey';
+const APP_VERSION = '3.2.1';
+const APP_TAG = '3.2.1-writing-auskey';
 const DATA_VERSION = 4; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
