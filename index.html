@@ -392,6 +392,9 @@ textarea.kt.napbox{min-height:330px}
 }
 @media (max-width:700px){ .tasks,.bigmode .tasks,.gcols{grid-template-columns:1fr} .wishgrid{grid-template-columns:repeat(2,minmax(0,1fr))} .adjform,.ngform{grid-template-columns:1fr} .keys{grid-template-columns:repeat(3,80px)} .week{grid-template-columns:repeat(4,1fr)} }
 @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+
+/* v3.2 AUSkey writing */
+.sectionhead{display:flex;align-items:center;justify-content:space-between;gap:12px}.sectionhead h2{margin:0}.napclock{font-variant-numeric:tabular-nums;color:var(--c);font-size:.8em;white-space:nowrap}.planfields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.planfield{display:flex;flex-direction:column;gap:4px}.planfield.required{border:3px solid #ffd166;border-radius:14px;padding:8px;background:#fffaf0}.planfield textarea{width:100%;min-height:58px;resize:vertical}.planfield small{color:var(--muted);font-weight:700}.idea-line{background:#eef8ff;border-radius:12px;padding:10px;font-weight:700}.hintbox{margin-top:12px;padding:10px 14px;background:#fff8d8;border-radius:14px;color:#684f00;font-weight:700}.hintbox p{margin:3px 0}.photoadd{display:block;margin-top:12px;padding:12px;border:2px dashed var(--c);border-radius:12px;font-weight:800;cursor:pointer}.photoadd input{display:block;margin-top:6px}.phasebuttons{flex-wrap:wrap;margin-top:14px}@media(max-width:700px){.planfields{grid-template-columns:1fr}.sectionhead{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
@@ -409,12 +412,15 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.1';
-const APP_TAG = '3.1-drive-sync';
-const DATA_VERSION = 3; // v3: tokens + wishes/goals replace the old screen-time reward
+const APP_VERSION = '3.2';
+const APP_TAG = '3.2-writing-auskey';
+const DATA_VERSION = 4; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
 const NAP_MIN_WORDS = 80, NAP_MAX_WORDS = 150, NAP_SUBMIT_MIN = 20;
+const NAP_CONJUNCTIONS = ['Although','Though','Because','Since','While','When','Before','After','Until','As soon as','Unless','Provided that'];
+const HENRY_WORDS = ['haunted','lighthouse','medal','curious','kicking','learns','situations','floted','stuks','trafic','unlokes','charcter','tresure'];
+const NAP_PRESENT_VERBS = ['is','are','has','have','go','goes','runs','run','looks','look','says','say','loses','belongs','cannot','does',"doesn't"];
 const STORE_KEY = 'holidayQuest.v1';
 const PARENT_IDLE_MS = 5 * 60 * 1000;
 const PIN_MAX_FAILS = 5, PIN_LOCK_MS = 30 * 1000;
@@ -427,6 +433,12 @@ const WISH_PRESETS = [
   { id: 'zoo',     emoji: '🦒', name: 'Perth Zoo', price: 100 },
   { id: 'book',    emoji: '📚', name: 'A new book', price: 40, little: 20 },
   { id: 'park',    emoji: '🛝', name: 'Park or playground trip', price: 30 },
+  { id: 'bike',    emoji: '🚲', name: 'Ride bicycle', price: 20 },
+  { id: 'playdate',emoji: '🧒', name: 'Play date with friends', price: 35 },
+  { id: 'skating', emoji: '🛼', name: 'Roller skating', price: 45 },
+  { id: 'bounce',  emoji: '🤸', name: 'Bounce (trampoline park)', price: 60 },
+  { id: 'chuck',   emoji: '🐭', name: "Chuck E. Cheese", price: 75 },
+  { id: 'overseas',emoji: '✈️', name: 'Overseas trip', price: 500, familySuggested: true },
   { id: 'treat',   emoji: '🍦', name: 'Ice cream or treat outing', price: 25 },
   { id: 'other',   emoji: '✨', name: 'Something else', price: 50 }
 ];
@@ -548,6 +560,13 @@ function normalise(d) {
   const def = defaultData();
   if (!d || typeof d !== 'object' || !Array.isArray(d.kids) || !d.kids.length) return def;
   migrate(d);
+  // v3.2 guided AUSkey writing fields; old writing remains readable and editable.
+  Object.values(d.days || {}).forEach(kdays => Object.values(kdays || {}).forEach(r => {
+    if (!r || !r.nap) return; const n = r.nap;
+    n.plan = Object.assign({ orientation:'', complication:'', mainEvent:'', solution:'', resolution:'', whatHappened:'', whyMattered:'', whatChanged:'' }, n.plan || {});
+    n.hints = Object.assign({}, n.hints || {}); n.photo = n.photo || ''; n.phase = n.phase || 'plan';
+    n.timeTaken = Object.assign({ plan:0, write:0, check:0 }, n.timeTaken || {}); n.auskey = !!n.auskey;
+  }));
   const out = Object.assign({}, def, d);
   delete out.exportedAt; delete out.app; delete out.appVersion; delete out.drive;
   out.rules = Object.assign({}, def.rules, d.rules || {});
@@ -1172,8 +1191,15 @@ const NAP_GEN = [
   { id: 'ng16', type: 'narrative', title: 'Shrunk!', text: 'You wake up and you are as small as an ant. Write about your adventure.' },
   { id: 'ng17', type: 'persuasive', title: 'Kids should play outside every day', text: 'Should every child spend time playing outside every day? Give your opinion and reasons.' }
 ];
+const NAP_AUSKEY = [
+  { id: 'na1', type: 'narrative', title: 'The problem at the lighthouse', text: 'A curious child hears a strange sound inside an old lighthouse. Write a story about the problem and how the child fixes it.' },
+  { id: 'na2', type: 'narrative', title: 'The medal in the mud', text: 'You find a medal in the mud after a storm. Write a story about who lost it, what goes wrong, and what you do.' },
+  { id: 'na3', type: 'narrative', title: 'The animal that needed help', text: 'On the way home, you notice an animal stuck in a tricky place. Write how the character takes action and solves the problem.' },
+  { id: 'na4', type: 'narrative', title: 'The map with one missing piece', text: 'A map leads to a secret place, but one piece is missing. Write the adventure, the main event and the solution.' },
+  { id: 'na5', type: 'narrative', title: 'The surprise at the school gate', text: 'Something unexpected is waiting at the school gate. Write a story with a clear beginning, problem, action, solution and ending.' }
+];
 // Interleave: trip, general, trip, general… (types alternate too)
-const NBANK = (() => { const out = []; for (let i = 0; i < Math.max(NAP_TRIP.length, NAP_GEN.length); i++) { if (NAP_TRIP[i]) out.push(Object.assign({ trip: true }, NAP_TRIP[i])); if (NAP_GEN[i]) out.push(Object.assign({ trip: false }, NAP_GEN[i])); } return out; })();
+const NBANK = (() => { const out = []; for (let i = 0; i < Math.max(NAP_TRIP.length, NAP_GEN.length); i++) { if (NAP_TRIP[i]) out.push(Object.assign({ trip: true }, NAP_TRIP[i])); if (NAP_GEN[i]) out.push(Object.assign({ trip: false }, NAP_GEN[i])); } return out.concat(NAP_AUSKEY.map(p => Object.assign({ trip: false, auskey: true }, p))); })();
 const NAP_STRUCT = {
   narrative: { label: 'Narrative (story)', emoji: '📖', steps: [
     ['Orientation', 'Who is in the story? Where and when does it happen?'],
@@ -1186,7 +1212,7 @@ const NAP_STRUCT = {
     ['Conclusion', 'Say your opinion again, strongly. “That is why…”']],
     tip: 'Talk to your reader! Use strong words like “must”, “everyone”, “definitely”.' }
 };
-const NAP_CHECKS = ['🔠 Capital letters', '⏺️ Full stops', '✨ Interesting words', '📑 Paragraphs'];
+const NAP_CHECKS = ['🕰️ Past tense', '🔗 Joining words from the 12', '📑 Paragraphs', '👤 Pronouns instead of repeating the name', '🔠 Capital letters and full stops', '🛠️ Solution shows HOW', '❓ Ending answers the Three Questions', '🔎 Spelling: check my word list'];
 
 /* ---------- helpers ---------- */
 const wordCount = s => String(s || '').trim().split(/\s+/).filter(w => /[A-Za-z0-9]/.test(w)).length;
@@ -1238,7 +1264,7 @@ function napFor(kid, dk, create) {
   const r = dayRec(kid.id, dk, create); if (!r) return null;
   if (!r.nap && create) {
     const p = nextPrompt(kid);
-    r.nap = { pid: p.id, type: p.type, trip: p.trip, title: p.title, prompt: p.text, text: '', paper: false, checks: [], shuffled: false, s: 'todo' };
+    r.nap = { pid: p.id, type: p.type, trip: p.trip, auskey: !!p.auskey, title: p.title, prompt: p.text, text: '', paper: false, photo: '', checks: [], hints: {}, plan: { orientation: '', complication: '', mainEvent: '', solution: '', resolution: '', whatHappened: '', whyMattered: '', whatChanged: '' }, phase: 'plan', phaseStarted: now(), timeTaken: { plan: 0, write: 0, check: 0 }, shuffled: false, s: 'todo' };
     save();
   }
   return r.nap || null;
@@ -1353,37 +1379,39 @@ function viewBook() {
     ${qsHtml}
   </div>`;
 }
+function napHints(n) {
+  const text = String(n.text || ''), lower = text.toLowerCase();
+  const present = NAP_PRESENT_VERBS.filter(v => new RegExp('\\b' + v.replace(/\s+/g,'\\s+') + '\\b','i').test(lower));
+  const conjunctions = NAP_CONJUNCTIONS.filter(c => new RegExp('\\b' + c.toLowerCase().replace(/\s+/g,'\\s+') + '\\b','i').test(lower));
+  const misspellings = HENRY_WORDS.filter(w => new RegExp('\\b' + w + '\\b','i').test(lower));
+  const name = (n.plan && (n.plan.orientation || '').match(/^[^,.!?\n]+/ ) || [''])[0].trim();
+  const repeat = name && (text.match(new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&') + '\\b','gi')) || []).length > 3;
+  return { present, conjunctions, misspellings, solutionEmpty: !String(n.plan && n.plan.solution || '').trim(), repeatedName: !!repeat };
+}
+function napPlan(n) { return Object.assign({orientation:'',complication:'',mainEvent:'',solution:'',resolution:'',whatHappened:'',whyMattered:'',whatChanged:''}, n.plan || {}); }
+function napTimeLeft(n, phase) { const lim = phase === 'plan' ? 300 : phase === 'write' ? 1800 : 300; const started = +(n.phaseStarted || now()); return Math.max(0, lim - Math.floor((now() - started) / 1000)); }
+function napTimer(n, phase) { const left = napTimeLeft(n, phase); return `<span class="napclock" data-naptimer="${phase}" data-left="${left}">⏱️ ${fmtClock(left)}</span>`; }
+function napPhaseButton(n, phase, label) { return `<button class="btn ${n.phase === phase ? 'primary' : 'ghost'} small" data-act="napphase" data-phase="${phase}">${label}</button>`; }
+function napHintHtml(n) {
+  const h = napHints(n), bits = [];
+  if (h.solutionEmpty) bits.push('💡 Your solution is waiting: what does your character DO?');
+  if (h.present.length) bits.push('🕰️ Check these words for past tense: ' + h.present.slice(0,4).join(', ') + '.');
+  if (h.conjunctions.length) bits.push('🔗 Great — you used ' + h.conjunctions.length + ' joining word' + (h.conjunctions.length === 1 ? '' : 's') + '.');
+  if (h.misspellings.length) bits.push('🔎 Word-list check: look at ' + h.misspellings.slice(0,4).join(', ') + '.');
+  if (h.repeatedName) bits.push('👤 Try a pronoun sometimes: he, she, they or it.');
+  return `<div class="hintbox" data-naphints>${bits.length ? bits.map(x => `<p>${esc(x)}</p>`).join('') : '<p>🌟 Keep going — your ideas are growing!</p>'}</div>`;
+}
 function viewNaplan() {
   const kid = curKid(); if (!kid) { S.view = 'home'; return viewHome(); }
   const n = napFor(kid, S.today, true); if (!n) { S.view = 'kid'; return viewKid(); }
-  const st = NAP_STRUCT[n.type] || NAP_STRUCT.narrative, locked = n.s !== 'todo', wc = wordCount(n.text);
-  const head = writeHead(kid, '✍️ NAPLAN writing', `Bonus +${D.rules.napTokens} 🪙 · one prompt a day`);
-  const promptCard = `<section class="card napprompt ga-p" data-sec="prompt">
-      <div class="kmeta"><span class="chip ok" data-naptype="${n.type}">${st.emoji} ${esc(st.label)}</span>${n.trip ? '<span class="chip soon">🧳 From our trip</span>' : ''}</div>
-      <h2 style="margin-top:10px" data-napid="${esc(n.pid)}">${esc(n.title)}</h2>
-      <div class="qlabel" style="margin-top:6px"><span class="qtext">${esc(n.prompt)}</span>${sayBtn(n.title + '. ' + n.prompt)}</div>
-      ${locked ? '' : `<div class="btnrow"><button class="btn ghost small" data-act="napshuffle" ${n.shuffled ? 'disabled' : ''}>🔀 ${n.shuffled ? 'New prompt used today' : 'New prompt (1 a day)'}</button></div>`}
-    </section>
-    <section class="card ga-s" data-sec="structure"><h2>🧱 Plan it</h2>
-      <div class="steps">${st.steps.map(([h, t], i) => `<div class="step"><b>${i + 1}. ${esc(h)}</b>${esc(t)}</div>`).join('')}</div>
-      <p class="sub" style="margin-top:10px">💡 ${esc(st.tip)}</p>
-    </section>
-    <section class="card ga-c" data-sec="checklist"><h2>✅ Check my writing</h2>
-      <div class="checks">${NAP_CHECKS.map((c, i) => `<button class="cbox ${n.checks.includes(i) ? 'on' : ''}" data-act="napcheck" data-i="${i}" ${locked ? 'disabled' : ''} aria-pressed="${n.checks.includes(i)}">${n.checks.includes(i) ? '✅' : '⬜'} ${esc(c)}</button>`).join('')}</div>
-    </section>`;
-  const writeCard = locked
-    ? `<section class="card ga-w" data-sec="write"><h2>${n.s === 'done' ? '✅ Mum/Dad checked it — brilliant writing!' : '⏳ Waiting for Mum/Dad to check'}</h2>${napQA(n)}
-        <div class="btnrow">${n.s === 'pending' ? '<button class="btn ghost" data-act="naptakeback">↩️ Take it back to change</button><button class="btn primary" data-act="askcheck">🙋 Ask Mum/Dad to check</button>' : ''}<button class="btn primary" data-act="kidback">⬅️ Back to my jobs</button></div></section>`
-    : `<section class="card ga-w" data-sec="write"><h2>📝 My writing</h2>
-        <textarea class="kt napbox" data-bind="nap:text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Start writing here…" aria-label="My writing">${esc(n.text)}</textarea>
-        ${wcHtml('nap:text', wc, NAP_MIN_WORDS, NAP_MAX_WORDS)}
-        <button class="cbox paperbox ${n.paper ? 'on' : ''}" data-act="nappaper" aria-pressed="${n.paper}">${n.paper ? '✅' : '⬜'} 📝 I wrote it on paper</button>
-        <div class="btnrow submitrow"><button class="btn ok bigsubmit" data-act="napsubmit" data-ready="nap" ${napReady(n) ? '' : 'disabled'}>✅ Finished! Ask Mum/Dad to check</button></div>
-        <p class="small-print" data-live="naphint" style="visibility:${napReady(n) ? 'hidden' : 'visible'}">Write at least ${NAP_SUBMIT_MIN} words (or tick “I wrote it on paper”). Your best effort is what counts!</p>
-      </section>`;
-  return `<div class="kid wview theme-${esc(kid.color)}" data-view="naplan">${head}
-    ${n.back && n.s === 'todo' ? '<div class="banner">↩️ Mum or Dad asked you to add a little bit more. You can do it! 💪</div>' : ''}
-    <div class="wgrid">${promptCard}${writeCard}</div></div>`;
+  const st = NAP_STRUCT[n.type] || NAP_STRUCT.narrative, locked = n.s !== 'todo', wc = wordCount(n.text), plan = napPlan(n), h = napHints(n);
+  const head = writeHead(kid, '✍️ NAPLAN writing', `AUSkey-style writing · +${D.rules.napTokens} 🪙 when Mum/Dad checks`);
+  const fields = [['orientation','1. Beginning: who, where and when?','Who is there? Where? When?'],['complication','2. Problem / complication','What goes wrong?'],['mainEvent','3. Main event / action','What important thing happens?'],['solution','4. SOLUTION: how does the character fix it?','What does your character DO?'],['resolution','5. Ending / resolution','How does it finish?'],['whatHappened','Three Questions: What happened?',''],['whyMattered','Why did it matter?',''],['whatChanged','What changed?','']];
+  const planCard = `<section class="card ga-s" data-sec="plan"><div class="sectionhead"><h2>🧱 PLAN · ${napTimer(n,'plan')}</h2><span class="chip">5 minutes</span></div><p class="sub">Use past tense: walked, saw, felt, solved. A plan can be short, but every line needs an action.</p><div class="planfields">${fields.map(([k,label,ph]) => `<label class="planfield ${k==='solution'?'required':''}"><b>${esc(label)}</b>${ph ? `<small>${esc(ph)}</small>` : ''}<textarea rows="2" data-bind="nap:plan:${k}" placeholder="${esc(ph || 'Write your idea…')}" ${locked?'disabled':''}>${esc(plan[k])}</textarea></label>`).join('')}</div></section>`;
+  const checkCard = `<section class="card ga-c" data-sec="check"><div class="sectionhead"><h2>✅ CHECK · ${napTimer(n,'check')}</h2><span class="chip">5 minutes</span></div><p class="sub">Tick each check you really did.</p><div class="checks">${NAP_CHECKS.map((c,i)=>`<button class="cbox ${n.checks.includes(i)?'on':''}" data-act="napcheck" data-i="${i}" ${locked?'disabled':''} aria-pressed="${n.checks.includes(i)}">${n.checks.includes(i)?'✅':'⬜'} ${esc(c)}</button>`).join('')}</div>${napHintHtml(n)}<p class="sub">Personal word list: ${HENRY_WORDS.slice(0,7).join(' · ')}</p></section>`;
+  const promptCard = `<section class="card napprompt ga-p" data-sec="prompt"><div class="kmeta"><span class="chip ok">${st.emoji} ${esc(st.label)}</span>${n.trip?'<span class="chip soon">🧳 From our trip</span>':''}${n.auskey?'<span class="chip">🗝️ AUSkey practice</span>':''}</div><h2 style="margin-top:10px">${esc(n.title)}</h2><p class="idea-line">🖼️ Picture idea: imagine the place, character and problem in your mind.</p><div class="qlabel" style="margin-top:6px"><span class="qtext">${esc(n.prompt)}</span>${sayBtn(n.title+'. '+n.prompt)}</div>${locked?'':`<div class="btnrow"><button class="btn ghost small" data-act="napshuffle" ${n.shuffled?'disabled':''}>🔀 ${n.shuffled?'New prompt used today':'New prompt (1 a day)'}</button></div>`}</section>`;
+  const writeCard = locked ? `<section class="card ga-w" data-sec="write"><h2>${n.s==='done'?'✅ Mum/Dad checked it — brilliant writing!':'⏳ Waiting for Mum/Dad to check'}</h2>${napQA(n)}<div class="btnrow"><button class="btn primary" data-act="kidback">⬅️ Back to my jobs</button></div></section>` : `<section class="card ga-w" data-sec="write"><div class="sectionhead"><h2>📝 WRITE · ${napTimer(n,'write')}</h2><span class="chip">30 minutes</span></div><textarea class="kt napbox" data-bind="nap:text" autocapitalize="sentences" autocorrect="on" spellcheck="true" placeholder="Write your story here…" aria-label="My writing">${esc(n.text)}</textarea>${wcHtml('nap:text',wc,NAP_MIN_WORDS,NAP_MAX_WORDS)}<p class="sub" data-paragraphs>📑 ${String(n.text||'').split(/\n\s*\n/).filter(x=>x.trim()).length} paragraphs</p><label class="photoadd">📷 Add photo of handwriting<input type="file" accept="image/*" capture="environment" data-act="napphoto" ${n.photo?'data-hasphoto="1"':''}></label>${n.photo?'<p class="small-print">✅ Handwriting photo saved on this iPad and queued with the writing.</p>':''}${napHintHtml(n)}<div class="btnrow phasebuttons">${napPhaseButton(n,'plan','🧱 Plan')}${napPhaseButton(n,'write','📝 Write')}${napPhaseButton(n,'check','✅ Check')}</div><div class="btnrow submitrow"><button class="btn ok bigsubmit" data-act="napsubmit" data-ready="nap" ${napReady(n)?'':'disabled'}>✅ Finished! Ask Mum/Dad to check</button></div><p class="small-print" data-live="naphint" style="visibility:${napReady(n)?'hidden':'visible'}">Write at least ${NAP_SUBMIT_MIN} words (or tick “I wrote it on paper”). Your best effort is what counts!</p></section>`;
+  return `<div class="kid wview theme-${esc(kid.color)}" data-view="naplan">${head}${n.back&&n.s==='todo'?'<div class="banner">↩️ Mum or Dad asked you to add a little bit more. You can do it! 💪</div>':''}<div class="wgrid">${promptCard}${planCard}${writeCard}${checkCard}</div></div>`;
 }
 
 /* ---------- answers for grown-ups (check screen, history) ---------- */
@@ -1394,18 +1422,15 @@ function bookQA(b) {
     ${b.wp ? `<div class="q">✍️ ${esc(b.wp.q)}</div><div class="a">${story ? esc(story) : ''}${b.paper ? `<span class="paper">📝 ${story ? 'Also written' : 'Written'} on paper — please have a look</span>` : story ? '' : '—'}</div>` : ''}</div>`;
 }
 function napQA(n) {
-  const txt = String(n.text || '').trim(), st = NAP_STRUCT[n.type] || NAP_STRUCT.narrative;
-  return `<div class="qa" data-qa="nap"><div class="qt">✍️ <b>${esc(n.title)}</b> <span class="chip">${st.emoji} ${esc(st.label)}</span></div>
-    <div class="q">${esc(n.prompt)}</div>
-    <div class="a">${txt ? esc(txt) : ''}${n.paper ? `<span class="paper">📝 ${txt ? 'Also written' : 'Written'} on paper — please have a look</span>` : txt ? '' : '—'}</div>
-    <div class="q">${wordCount(txt)} words · checklist ticked ${n.checks.length}/${NAP_CHECKS.length}${n.checks.length ? ': ' + n.checks.map(i => NAP_CHECKS[i]).join(', ') : ''}</div></div>`;
+  const txt = String(n.text || '').trim(), st = NAP_STRUCT[n.type] || NAP_STRUCT.narrative, p = napPlan(n);
+  return `<div class="qa" data-qa="nap"><div class="qt">✍️ <b>${esc(n.title)}</b> <span class="chip">${st.emoji} ${esc(st.label)}</span></div><div class="q">${esc(n.prompt)}</div><h3>Plan</h3>${[['Beginning',p.orientation],['Problem',p.complication],['Main event',p.mainEvent],['Solution',p.solution],['Ending',p.resolution]].map(x=>`<div class="a"><b>${x[0]}:</b> ${esc(x[1]||'—')}</div>`).join('')}<div class="a">${txt?esc(txt):''}${n.paper?`<span class="paper">📝 ${txt?'Also written':'Written'} on paper — please have a look</span>`:txt?'':'—'}</div><div class="q">${wordCount(txt)} words · ${String(txt).split(/\n\s*\n/).filter(x=>x.trim()).length} paragraphs · checklist ticked ${n.checks.length}/${NAP_CHECKS.length}</div></div>`;
 }
 
 /* ---------- live updates while typing (no full re-render → keyboard stays up) ---------- */
 function bindTarget(bind) {
   const p = String(bind).split(':'), kid = curKid(); if (!kid) return null;
   if (p[0] === 'wish') return S.wish ? { obj: S.wish, key: 'text' } : null;
-  if (p[0] === 'nap') { const n = napFor(kid, S.today, false); return n && n.s === 'todo' ? { obj: n, key: 'text' } : null; }
+  if (p[0] === 'nap') { const n = napFor(kid, S.today, false); if (!n || n.s !== 'todo') return null; if (p[1] === 'plan') return { obj: n.plan || (n.plan = {}), key: p[2] }; return { obj: n, key: 'text' }; }
   if (p[0] === 'book') {
     const b = findBook(kid, p[1]); if (!b || b.s !== 'todo') return null;
     if (p[2] === 'ans') return { obj: b.ans, key: +p[3] };
@@ -1420,6 +1445,8 @@ function liveUpdate() {
     tmp.innerHTML = wcHtml(o.dataset.wc, wordCount(ta.value), lo, hi); o.replaceWith(tmp.firstChild);
   });
   const kid = curKid(); if (!kid) return;
+  const n = napFor(kid, S.today, false); $$('[data-naphints]').forEach(x => { if (n) x.innerHTML = napHintHtml(n).replace(/^<div[^>]*>|<\/div>$/g, ''); });
+  $$('[data-paragraphs]').forEach(x => { if (n) x.textContent = '📑 ' + String(n.text || '').split(/\n\s*\n/).filter(v => v.trim()).length + ' paragraphs'; });
   $$('[data-ready]').forEach(btn => {
     const k = btn.dataset.ready;
     if (k === 'bookstart') { const b = findBook(kid, btn.dataset.b); btn.disabled = !(b && b.title.trim()); }
@@ -1807,7 +1834,7 @@ function viewWish() {
     <section class="card"><h2>Who is it for?</h2>
       <div class="seg typeseg"><button class="${!w.family ? 'on' : ''}" data-act="wishfor" data-v="me" ${mineFull ? 'disabled' : ''}>🙋 Just for me</button><button class="${w.family ? 'on' : ''}" data-act="wishfor" data-v="family" ${famBusy ? 'disabled' : ''}>👨‍👩‍👧‍👦 For our family</button></div></section>
     <section class="card"><h2>Pick a picture</h2>
-      <div class="wishgrid">${WISH_PRESETS.map(p => `<button class="wishpick ${w.preset === p.id ? 'on' : ''}" data-act="wishpick" data-p="${p.id}" aria-pressed="${w.preset === p.id}"><span class="we">${p.emoji}</span><span class="wn">${esc(p.name)}</span></button>`).join('')}</div></section>
+      <div class="wishgrid">${WISH_PRESETS.map(p => `<button class="wishpick ${w.preset === p.id ? 'on' : ''}" data-act="wishpick" data-p="${p.id}" aria-pressed="${w.preset === p.id}"><span class="we">${p.emoji}</span><span class="wn">${esc(p.name)}</span>${p.familySuggested ? '<small>👨‍👩‍👧‍👦 family idea</small>' : ''}</button>`).join('')}</div>${w.preset === 'overseas' ? '<p class="banner">✈️ An overseas trip is a big shared family wish — choose “For our family” so both kids can help.</p>' : ''}</section>
     <section class="card"><h2>${kid.big ? 'Or tell us your wish' : 'Or type your wish'}</h2>
       <input class="kin" data-bind="wish:text" value="${esc(w.text || '')}" maxlength="60" placeholder="${w.preset === 'other' ? 'What would you like?' : 'e.g. a trip to the beach'}" aria-label="My wish" autocapitalize="sentences"></section>
     <div class="btnrow submitrow"><button class="btn ok bigsubmit" data-act="sendwish" data-ready="wish" ${wishReady() ? '' : 'disabled'}>📨 Send my wish to Mum/Dad</button></div>
@@ -1830,7 +1857,7 @@ function pWishes() {
   const done = D.goals.filter(g => g.status === 'done').sort((a, b) => (b.doneAt || 0) - (a.doneAt || 0));
   const dec = D.goals.filter(g => g.status === 'declined').slice(-8).reverse();
   return `<section class="card"><h2>🎯 Waiting for you (${pend.length})</h2>
-      <p class="sub">Approve a wish and set its price in tokens, or say “not now” with a short kind note. Suggested prices: book ${presetOf('book').price} (Henry) / ${presetOf('book').little} (Hayley), Scitech ${presetOf('scitech').price}, AQWA ${presetOf('aqwa').price}, Zoo ${presetOf('zoo').price}, treat ${presetOf('treat').price}.</p>
+      <p class="sub">Approve a wish and set its price in tokens, or say “not now” with a short kind note. Suggested prices: bike ${presetOf('bike').price}, play date ${presetOf('playdate').price}, skating ${presetOf('skating').price}, Bounce ${presetOf('bounce').price}, Chuck E. Cheese ${presetOf('chuck').price}, overseas family goal ${presetOf('overseas').price}; existing wishes stay unchanged.</p>
       <div class="clist">${pend.map(wishRow).join('') || '<p class="sub">No wishes waiting 👍</p>'}</div></section>
     <section class="card"><h2>⭐ Saving up now</h2>
       <div class="clist">${act.map(g => { const k = kidById(g.owner) || D.kids[0], have = Math.min(goalHave(g), g.price);
@@ -2048,10 +2075,11 @@ function drivePayload(kid, kind, dk, o) {
       writingPrompt: o.wp ? String(o.wp.q || '') : '', writing, onPaper: !!o.paper, wordCount: wordCount(writing)
     });
   }
-  const text = String(o.text == null ? '' : o.text), checks = Array.isArray(o.checks) ? o.checks : [];
+  const text = String(o.text == null ? '' : o.text), checks = Array.isArray(o.checks) ? o.checks : [], plan = napPlan(o), hints = o.hints || napHints(o);
   return Object.assign(base, {
-    title: String(o.title || ''), prompt: String(o.prompt || ''), napType: o.type === 'persuasive' ? 'persuasive' : 'narrative', trip: !!o.trip,
-    text, onPaper: !!o.paper, wordCount: wordCount(text),
+    title: String(o.title || ''), prompt: String(o.prompt || ''), napType: o.type === 'persuasive' ? 'persuasive' : 'narrative', trip: !!o.trip, auskey: !!o.auskey,
+    plan, text, onPaper: !!o.paper, photoData: String(o.photo || ''), wordCount: wordCount(text), paragraphCount: text.split(/\n\s*\n/).filter(x => x.trim()).length,
+    timeTaken: o.timeTaken || {}, autoHints: hints,
     checklist: NAP_CHECKS.map((c, i) => ({ item: c.replace(/^\S+\s/, ''), ticked: checks.includes(i) })), checksTicked: checks.length, checksTotal: NAP_CHECKS.length
   });
 }
@@ -2337,17 +2365,26 @@ const ACT = {
   sayq(el) { speak(el.dataset.say); },
   naplan() { const kid = curKid(); if (!kid || !kid.naplan) return; flushSave(); S.view = 'naplan'; window.scrollTo(0, 0); render(); },
   napcheck(el) { const n = napFor(curKid(), S.today, false); if (!n || n.s !== 'todo') return; const i = +el.dataset.i; n.checks = n.checks.includes(i) ? n.checks.filter(x => x !== i) : n.checks.concat(i).sort(); save(); render(); },
-  nappaper() { const n = napFor(curKid(), S.today, false); if (n && n.s === 'todo') { n.paper = !n.paper; save(); render(); } },
+  napphase(el) {
+    const n = napFor(curKid(), S.today, false); if (!n || n.s !== 'todo') return;
+    const phase = el.dataset.phase, old = n.phase || 'plan';
+    n.timeTaken = Object.assign({plan:0,write:0,check:0}, n.timeTaken || {});
+    n.timeTaken[old] = (n.timeTaken[old] || 0) + Math.max(0, Math.floor((now() - (n.phaseStarted || now())) / 1000));
+    n.phase = phase; n.phaseStarted = now(); save(); render();
+    const sec = $('[data-sec=' + phase + ']'); if (sec) sec.scrollIntoView({ block: 'start' });
+  },
+    nappaper() { const n = napFor(curKid(), S.today, false); if (n && n.s === 'todo') { n.paper = !n.paper; save(); render(); } },
   async napshuffle() {
     const kid = curKid(), n = napFor(kid, S.today, false); if (!n || n.shuffled || n.s !== 'todo') return;
     if (wordCount(n.text) > 0) { const ok = await confirmModal({ emoji: '🔀', title: 'Get a new prompt?', text: 'You can only do this once a day. Your writing so far will be cleared.', yes: '🔀 New prompt', no: 'Keep this one' }); if (!ok) return; }
     const p = nextPrompt(kid, [n.pid]);
-    Object.assign(n, { pid: p.id, type: p.type, trip: p.trip, title: p.title, prompt: p.text, text: '', checks: [], shuffled: true });
+    Object.assign(n, { pid: p.id, type: p.type, trip: p.trip, auskey: !!p.auskey, title: p.title, prompt: p.text, text: '', photo: '', checks: [], hints: {}, plan: { orientation:'', complication:'', mainEvent:'', solution:'', resolution:'', whatHappened:'', whyMattered:'', whatChanged:'' }, phase:'plan', phaseStarted:now(), timeTaken:{plan:0,write:0,check:0}, shuffled: true });
     save(); chime('tap'); render();
   },
   napsubmit() {
     const kid = curKid(), n = napFor(kid, S.today, false); if (!n || n.s !== 'todo') return;
     if (!napReady(n)) { toast(`Write at least ${NAP_SUBMIT_MIN} words first ✏️`); return; }
+    n.timeTaken = Object.assign({plan:0,write:0,check:0}, n.timeTaken || {}); n.timeTaken[n.phase || 'write'] = (n.timeTaken[n.phase || 'write'] || 0) + Math.max(0, Math.floor((now() - (n.phaseStarted || now())) / 1000)); n.hints = napHints(n);
     n.s = 'pending'; n.sentAt = now(); n.back = false; updateSum(kid, S.today); save(); chime('yay');
     S.view = 'kid'; window.scrollTo(0, 0); render();
     toast('✍️ Brilliant writing effort! Ask Mum or Dad to check.');
@@ -2507,6 +2544,11 @@ document.addEventListener('change', e => {
     const f = el.files && el.files[0]; if (!f) return;
     const rd = new FileReader(); rd.onload = () => importText(String(rd.result)); rd.readAsText(f); el.value = ''; return;
   }
+  if (el.matches('input[type=file][data-act=napphoto]')) {
+    const f = el.files && el.files[0], n = napFor(curKid(), S.today, false); if (!f || !n || n.s !== 'todo') return;
+    if (f.size > 1800000) { toast('That photo is a bit large — please choose a smaller one 📷'); el.value=''; return; }
+    const rd = new FileReader(); rd.onload = () => { n.photo = String(rd.result || ''); save(); render(); toast('📷 Handwriting photo saved'); }; rd.readAsDataURL(f); return;
+  }
   if (!el.dataset.edit) return;
   if (S.view === 'parent') S.parentUntil = now() + PARENT_IDLE_MS;
   const [scope, field] = el.dataset.edit.split('.');
@@ -2526,6 +2568,7 @@ function tick() {
   const tk = todayKey();
   if (tk !== S.today) { S.today = tk; const m = topModal('practice'); if (m) closeModal(m); render(); return; }
   if (S.view === 'parent' && now() > S.parentUntil) { S.parentUntil = 0; S.view = 'home'; MODALS.slice().forEach(m => closeModal(m)); render(); toast('🔒 Grown-up mode closed'); return; }
+  if (S.view === 'naplan') { $$('[data-naptimer]').forEach(el => { const n = napFor(curKid(), S.today, false); if (n) el.textContent = '⏱️ ' + fmtClock(napTimeLeft(n, el.dataset.naptimer)); }); }
   if (S.pt && !S.pt.finished) {
     const left = ptLeft(), m = topModal('practice');
     if (left <= 0) {
