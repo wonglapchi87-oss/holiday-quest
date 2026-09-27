@@ -414,8 +414,8 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.3';
-const APP_TAG = '3.3-drive-plus-share';
+const APP_VERSION = '3.3.1';
+const APP_TAG = '3.3.1-drive-plus-share-setup';
 const DATA_VERSION = 4; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
@@ -2095,7 +2095,7 @@ const driveNiceTime = ms => new Date(ms).toLocaleString('en-AU', { weekday: 'sho
 
 /* ---------- what gets sent ---------- */
 const driveSafe = s => String(s).replace(/[^A-Za-z0-9-]/g, '-');
-function driveId(kid, kind, dk, o) { return kind === 'b' ? `hq-${driveSafe(kid.id)}-${dk}-book-${driveSafe(o.id)}` : `hq-${driveSafe(kid.id)}-${dk}-naplan`; }
+function driveId(kid, kind, dk, o) { const test = new URLSearchParams(location.search).get('test') === '1'; return test ? `TEST-${driveSafe(kid.id)}-${dk}-${kind === 'b' ? 'book-' + driveSafe(o.id) : 'naplan'}` : kind === 'b' ? `hq-${driveSafe(kid.id)}-${dk}-book-${driveSafe(o.id)}` : `hq-${driveSafe(kid.id)}-${dk}-naplan`; }
 const driveIso = ms => { const d = new Date(+ms || now()); return isNaN(d) ? new Date(now()).toISOString() : d.toISOString(); };
 function drivePayload(kid, kind, dk, o) {
   const base = { id: driveId(kid, kind, dk, o), kind: kind === 'b' ? 'book' : 'naplan', child: kid.name, childId: kid.id, date: dk,
@@ -2110,7 +2110,7 @@ function drivePayload(kid, kind, dk, o) {
   }
   const text = String(o.text == null ? '' : o.text), checks = Array.isArray(o.checks) ? o.checks : [], plan = napPlan(o), hints = o.hints || napHints(o);
   return Object.assign(base, {
-    title: String(o.title || ''), prompt: String(o.prompt || ''), napType: o.type === 'persuasive' ? 'persuasive' : 'narrative', trip: !!o.trip, auskey: !!o.auskey,
+    title: (new URLSearchParams(location.search).get('test') === '1' ? 'TEST - ' : '') + String(o.title || ''), prompt: String(o.prompt || ''), napType: o.type === 'persuasive' ? 'persuasive' : 'narrative', trip: !!o.trip, auskey: !!o.auskey,
     plan, text, onPaper: !!o.paper, photoData: String(o.photo || ''), wordCount: wordCount(text), paragraphCount: text.split(/\n\s*\n/).filter(x => x.trim()).length,
     timeTaken: o.timeTaken || {}, autoHints: hints,
     checklist: NAP_CHECKS.map((c, i) => ({ item: c.replace(/^\S+\s/, ''), ticked: checks.includes(i) })), checksTicked: checks.length, checksTotal: NAP_CHECKS.length
@@ -2156,6 +2156,23 @@ function driveBackfill() {
   return { added, had };
 }
 
+/* ---------- one-tap private Drive setup ---------- */
+function driveSetupFromHash() {
+  const raw = String(location.hash || ''); if (!raw.startsWith('#drive-setup=')) return false;
+  let ok = false, msg = '';
+  try {
+    const b64 = raw.slice('#drive-setup='.length).replace(/-/g, '+').replace(/_/g, '/'), json = decodeURIComponent(escape(atob(b64 + '='.repeat((4 - b64.length % 4) % 4)))), cfg = JSON.parse(json);
+    if (!driveLinkOk(cfg.url) || !String(cfg.key || '')) throw new Error('The setup link is not valid');
+    DRV.url = String(cfg.url); DRV.key = String(cfg.key); DRV.on = true; DRV.test = null; driveSave(); ok = true;
+    history.replaceState(null, document.title, location.pathname + location.search);
+  } catch (e) {
+    msg = e && e.message ? e.message : 'The setup link could not be read';
+    try { history.replaceState(null, document.title, location.pathname + location.search); } catch (_) {}
+  }
+  if (ok) setTimeout(async () => { const r = await driveTest(); if (r.ok) { toast('Google Drive connected ✅'); await driveFlush(true); } else toast('Google Drive setup error: ' + (r.msg || r.error || 'connection failed')); }, 80);
+  else setTimeout(() => toast(msg), 80);
+  return true;
+}
 /* ---------- network ---------- */
 async function driveFetch(url, opts) {
   const ctl = typeof AbortController === 'function' ? new AbortController() : null;
@@ -2631,6 +2648,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 }
 if (MIGRATED) save(); // v1/v2 → v3 upgrade is stored straight away
 afterLoad(); // today's already-confirmed jobs earn tokens once, right after the upgrade
+driveSetupFromHash();
 render();
 </script>
 </body>

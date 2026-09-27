@@ -1,7 +1,7 @@
 /* Optional helper for Holiday Quest. Only used when the app is served over https.
    Lets the Home Screen app open even with no internet. Data is NOT stored here —
    it stays in the page's localStorage. */
-const CACHE = 'holiday-quest-v3-3'; // v3.3-drive-plus-share — bump on every release so iPads fetch the new app
+const CACHE = 'holiday-quest-v3-3-1'; // v3.3.1-drive-plus-share-setup — bump on every release so iPads fetch the new app
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(['./', './index.html'])).catch(() => {}));
   self.skipWaiting();
