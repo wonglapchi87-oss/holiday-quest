@@ -88,7 +88,7 @@ h1,h2,h3,p{margin:0}
 .kav{width:84px;height:84px;border-radius:50%;background:var(--cl);display:flex;align-items:center;justify-content:center;font-size:54px;flex:none}
 .kwho h1{font-size:40px;font-weight:900;color:var(--cd)}
 .kright{display:flex;align-items:center;gap:12px}
-.kgrid{display:grid;gap:22px;grid-template-columns:minmax(0,1fr) 370px;grid-template-areas:"tasks wallet" "tasks extras";grid-template-rows:auto 1fr;align-items:start}
+.kgrid{display:grid;gap:22px;grid-template-columns:minmax(0,1fr) 370px;grid-template-areas:"tasks wallet";grid-template-rows:auto;align-items:start}
 .tasks-col{grid-area:tasks}
 .wallet{grid-area:wallet}
 .extras{grid-area:extras}
@@ -378,7 +378,7 @@ textarea.kt.napbox{min-height:330px}
 /* ---------- RESPONSIVE ---------- */
 @media (max-width:1100px){ .kgrid{grid-template-columns:minmax(0,1fr) 330px} .xchip{font-size:17px} }
 @media (orientation:portrait), (max-width:900px){
-  .kgrid{grid-template-columns:1fr;grid-template-areas:"wallet" "tasks" "extras";grid-template-rows:auto}
+  .kgrid{grid-template-columns:1fr;grid-template-areas:"wallet" "tasks";grid-template-rows:auto}
   .wallet{display:grid;grid-template-columns:auto 1fr;gap:0 20px;text-align:left;align-items:center}
   .wallet .coin{grid-row:1 / span 9;font-size:96px;margin:0 10px}
   .wallet>*:not(.coin){grid-column:2}
@@ -414,9 +414,9 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.3.1';
-const APP_TAG = '3.3.1-drive-plus-share-setup';
-const DATA_VERSION = 4; // v3: tokens + wishes/goals replace the old screen-time reward
+const APP_VERSION = '3.4';
+const APP_TAG = '3.4-reading-bonuses-drive';
+const DATA_VERSION = 5; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
 const NAP_MIN_WORDS = 80, NAP_MAX_WORDS = 150, NAP_SUBMIT_MIN = 20;
@@ -481,13 +481,13 @@ function defaultData() {
     pin: '1234', pinChanged: false,
     // bookTokens per confirmed book Q&A (every book), napTokens for NAPLAN writing,
     // capOn/cap = optional daily token limit (off by default), maxGoals = active wishes per child
-    rules: { bookTokens: 3, napTokens: 5, capOn: false, cap: 30, maxGoals: 1 },
+    rules: { bookTokens: 1, napTokens: 5, capOn: false, cap: 30, maxGoals: 1 },
     kids: [
       { id: 'henry', name: 'Henry', avatar: '🦖', color: 'blue', readAloud: false, big: false, naplan: true, stars: false, allDone: 2,
         tasks: [
           { id: 'piano',   emoji: '🎹', name: 'Piano',          note: 'Practise for 30 minutes', minutes: 30, type: 'daily', outing: true, tokens: 3 },
           { id: 'violin',  emoji: '🎻', name: 'Violin',         note: 'Practise for 20 minutes', minutes: 20, type: 'daily', outing: true, tokens: 2 },
-          { id: 'reading', emoji: '📖', name: 'Reading',        note: READING_NOTE_V2,           minutes: 20, type: 'daily', outing: false, books: true, tokens: 2 },
+          { id: 'reading', emoji: '📖', name: 'Reading',        note: READING_NOTE_V2,           minutes: 20, type: 'daily', outing: false, books: true, tokens: 0 },
           { id: 'maths',   emoji: '🔢', name: 'Maths with Sam', note: 'Riverton Singapore Math – one lesson', minutes: 0, type: 'daily', outing: false, tokens: 2 },
           { id: 'room',    emoji: '🛏️', name: 'Tidy my room',   note: 'Bed, floor and desk',      minutes: 0, type: 'daily', outing: false, tokens: 1 },
           { id: 'chore',   emoji: '🧹', name: 'One chore',      note: 'e.g. sweep the floor',     minutes: 0, type: 'daily', outing: false, tokens: 1 },
@@ -501,12 +501,9 @@ function defaultData() {
         ] }
     ],
     extras: [
-      { id: 'fold',   emoji: '👕', name: 'Fold clothes', tokens: 1 },
-      { id: 'plants', emoji: '🪴', name: 'Water plants', tokens: 1 },
-      { id: 'cook',   emoji: '🍳', name: 'Help cook', tokens: 1 },
-      { id: 'wipe',   emoji: '🧽', name: 'Wipe the table', tokens: 1 },
-      { id: 'shoes',  emoji: '👟', name: 'Put shoes away', tokens: 1 },
-      { id: 'dishes', emoji: '🥣', name: 'Help with dishes', tokens: 1 }
+      { id: 'samextra', emoji: '📘', name: 'Finished one more Sam book/set', tokens: 2 },
+      { id: 'fold', emoji: '👕', name: 'Fold clothes', tokens: 1 },
+      { id: 'dinner', emoji: '🍽️', name: 'Set up dinner + put used dishes in the dishwasher', tokens: 2 }
     ],
     outing: {},   // 'YYYY-MM-DD': true
     napSeen: {},  // kidId -> [NAPLAN prompt ids already used] (no repeats until the bank is used up)
@@ -553,6 +550,16 @@ function migrate(d) {
       for (const r of Object.values(kd || {})) if (r && typeof r === 'object') { delete r.run; delete r.used; delete r.adj; if (r.sum) delete r.sum.earned; }
     d.ledger = {}; d.goals = []; d.tokensSince = todayKey();
     d.awardToday = true; // today's already-confirmed jobs earn tokens at the v3 values (done after loading)
+  }
+  if (from < 5) {
+    d.rules = Object.assign({}, d.rules || {}, { bookTokens: 1 });
+    const h5 = (d.kids || []).find(k => k && k.id === 'henry');
+    if (h5 && Array.isArray(h5.tasks)) { const rd5 = h5.tasks.find(t => t.id === 'reading' || /read/i.test(t.name || '')); if (rd5) rd5.tokens = 0; }
+    d.extras = [
+      { id: 'samextra', emoji: '📘', name: 'Finished one more Sam book/set', tokens: 2 },
+      { id: 'fold', emoji: '👕', name: 'Fold clothes', tokens: 1 },
+      { id: 'dinner', emoji: '🍽️', name: 'Set up dinner + put used dishes in the dishwasher', tokens: 2 }
+    ];
   }
   if (from < DATA_VERSION && d.migratedFrom == null) d.migratedFrom = from;
   d.version = DATA_VERSION;
@@ -695,7 +702,7 @@ function syncDay(kid, dk) {
   for (const [id, s] of Object.entries(r.t)) if (s === 'done') { const t = kid.tasks.find(x => x.id === id); want.set(`${dk}|t:${id}`, [t ? tokOf(t) : 0, t ? t.name : 'Job']); }
   const bt = bookTask(kid);
   if (bt && !r.t[bt.id] && statusOf(kid, bt, dk) === 'done') want.set(`${dk}|t:${bt.id}`, [tokOf(bt), bt.name]);
-  for (const [id, s] of Object.entries(r.x)) if (s === 'done') { const x = D.extras.find(e => e.id === id); want.set(`${dk}|x:${id}`, [x ? tokOf(x) : 1, x ? x.name : 'Bonus job']); }
+  for (const [id, s] of Object.entries(r.x)) if (s === 'done') { const x = D.extras.find(e => e.id === id); want.set(`${dk}|x:${id}`, [x ? tokOf(x) : 1, x ? x.name : 'Bonus challenge']); }
   (Array.isArray(r.books) ? r.books : []).forEach(b => { if (b.s === 'done') want.set(`${dk}|b:${b.id}`, [D.rules.bookTokens, 'Book: ' + (b.title || '')]); });
   if (r.nap && r.nap.s === 'done') want.set(`${dk}|n`, [D.rules.napTokens, 'NAPLAN writing']);
   for (const e of ledgerOf(kid.id).slice()) if (e.k === 'earn' && e.dk === dk && e.ref.startsWith(dk + '|') && !e.ref.includes('|w:') && !want.has(e.ref)) unaward(kid, e.ref);
@@ -1000,7 +1007,7 @@ function taskCard(kid, t, dk) {
   else if (s === 'pending') action = `<button class="btn pendingb" data-act="undo" data-t="${esc(t.id)}">⏳ Waiting for Mum/Dad</button>`;
   else action = `<div class="donebadge">✅ ${esc(praise(t, dk))}</div>`;
   const timerBtn = (t.minutes > 0 && s === 'todo') ? `<button class="btn timer" data-act="ptimer" data-t="${esc(t.id)}" aria-label="Start ${t.minutes} minute timer"><span>⏱ ${t.minutes}<span class="tmin"> min</span></span></button>` : '';
-  const tk = tokOf(t) + (t.books ? Math.max(0, +D.rules.bookTokens || 0) : 0);
+  const tk = t.books ? Math.max(0, +D.rules.bookTokens || 0) : tokOf(t);
   return `<div class="task s-${s} ${weekly ? 'weekly' : ''} ${flag.cls}" data-task="${esc(t.id)}" data-status="${s}">
     <button class="temoji" data-act="say" data-t="${esc(t.id)}" aria-label="${esc(t.name)}">${esc(t.emoji)}</button>
     <div class="tbody">
@@ -1038,14 +1045,10 @@ function walletCard(kid, p) {
   </section>`;
 }
 const hasChallenges = kid => !!(bookTask(kid) || kid.naplan);
-function extrasCard(kid, dk, p) {
-  const r = dayRec(kid.id, dk, false) || { x: {} }, R = D.rules, u = UNIT(kid);
-  return `<section class="card extras">
-    <h2>⭐ Bonus jobs</h2>
-    <p class="sub">Extra ways to help. Each one earns ${u.many} when Mum or Dad checks.</p>
-    ${R.capOn ? `<p class="sub" data-cap>Today: ${p.tok} of ${R.cap} ${u.many} (daily limit)</p>` : ''}
-    <div class="xlist">${D.extras.map(x => { const s = r.x[x.id] || 'todo';
-      return `<button class="xchip s-${s}" data-act="extra" data-x="${esc(x.id)}" data-status="${s}"><span class="xe">${esc(x.emoji)}</span><span class="xn">${esc(x.name)}</span><span class="xs">${s === 'done' ? '✅' : s === 'pending' ? '⏳' : '+' + tokOf(x)}</span></button>`; }).join('')}</div>
+function bonusChallengeCard(kid, dk, p) {
+  const r = dayRec(kid.id, dk, false) || { x: {} }, u = UNIT(kid);
+  return `<section class="card extras"><h2>🌟 Bonus challenge</h2><p class="sub">Optional challenges. Mum or Dad checks them, then the tokens are added.</p>
+    <div class="xlist">${D.extras.map(x => { const s = r.x[x.id] || 'todo'; return `<button class="xchip s-${s}" data-act="extra" data-x="${esc(x.id)}" data-status="${s}"><span class="xe">${esc(x.emoji)}</span><span class="xn">${esc(x.name)}</span><span class="xs">${s === 'done' ? '✅' : s === 'pending' ? '⏳' : '+' + tokOf(x) + ' ' + u.i}</span></button>`; }).join('')}</div>
   </section>`;
 }
 function viewKid() {
@@ -1069,7 +1072,7 @@ function viewKid() {
         ${challengeSection(kid, dk)}
       </main>
       ${walletCard(kid, p)}
-      ${extrasCard(kid, dk, p)}
+      ${bonusChallengeCard(kid, dk, p)}
     </div>
   </div>`;
 }
@@ -1306,10 +1309,10 @@ const napReady = n => !!(n && (n.paper || wordCount(n.text) >= NAP_SUBMIT_MIN));
 
 /* ---------- v2 kid cards: books & NAPLAN ---------- */
 const bStatusIcon = s => s === 'done' ? '✅' : s === 'pending' ? '⏳' : '✏️';
-function bookRow(b) {
+function bookRow(b, bi) {
   return `<button class="brow s-${b.s}" data-act="book" data-b="${esc(b.id)}" data-bookrow="${esc(b.id)}" data-status="${b.s}">
     <span class="bi">${bStatusIcon(b.s)}</span><span class="bt">${esc(b.title || 'New book')}</span>
-    <span class="bs">${b.s === 'done' ? '+' + D.rules.bookTokens + ' 🪙' : b.s === 'pending' ? 'waiting' : b.back ? 'add a bit more' : 'keep going'}</span></button>`;
+    <span class="bs">${b.s === 'done' ? '+' + D.rules.bookTokens + ' 🪙' : b.s === 'pending' ? 'waiting' : b.back ? 'add a bit more' : 'Book ' + (bi + 2) + ': +' + D.rules.bookTokens}</span></button>`;
 }
 function readingExtra(kid, t, dk) { // shown inside the must-do Reading card
   const bs = booksOf(kid, dk); if (!bs.length) return '';
@@ -1335,7 +1338,7 @@ function moreBooksCard(kid, dk, bt) {
   const bs = booksOf(kid, dk), readingToday = visibleTasks(kid, dk).includes(bt);
   const extra = readingToday ? bs.slice(1) : bs;
   const canAdd = (!readingToday || bs.length > 0) && bs.length < MAX_BOOKS_PER_DAY;
-  const note = bs.length >= MAX_BOOKS_PER_DAY ? `Wow, ${bs.length} books today! 🏆` : readingToday && !bs.length ? 'Do your first book in Reading first 📖' : `Read another book and answer 3 new questions = +${D.rules.bookTokens} tokens each`;
+  const note = bs.length >= MAX_BOOKS_PER_DAY ? `Wow, ${bs.length} books today! 🏆` : readingToday && !bs.length ? 'Do your first book in Reading first 📖' : `Book 2, 3…: answer 3 new questions = +${D.rules.bookTokens} token each`;
   return `<div class="task challenge ch-books ${extra.length ? 'haslist' : ''}" data-ch="books">
     <span class="temoji">📚</span>
     <div class="tbody"><div class="tname">More books</div><div class="tnote">${esc(note)}</div></div>
@@ -1568,7 +1571,7 @@ function pendingItems(kid) {
   for (let i = 0; i < 7; i++) {
     const dk = addDays(S.today, -i), r = dayRec(kid.id, dk, false); if (!r) continue;
     for (const [id, s] of Object.entries(r.t)) if (s === 'pending') { const t = kid.tasks.find(x => x.id === id); items.push({ kind: 't', dk, id, emoji: t ? t.emoji : '❔', name: t ? t.name : '(removed job)' }); }
-    for (const [id, s] of Object.entries(r.x)) if (s === 'pending') { const x = D.extras.find(e => e.id === id); items.push({ kind: 'x', dk, id, emoji: x ? x.emoji : '⭐', name: (x ? x.name : 'Bonus job') + ' (bonus)' }); }
+    for (const [id, s] of Object.entries(r.x)) if (s === 'pending') { const x = D.extras.find(e => e.id === id); items.push({ kind: 'x', dk, id, emoji: x ? x.emoji : '⭐', name: (x ? x.name : 'Bonus challenge') + ' (bonus)' }); }
     (Array.isArray(r.books) ? r.books : []).forEach((b, bi) => { if (b.s === 'pending') items.push({ kind: 'b', dk, id: b.id, emoji: '📚', name: `Book ${bi + 1}: “${b.title}”` + (bi === 0 ? ' (Reading)' : ' (bonus)'), qa: bookQA(b) }); });
     if (r.nap && r.nap.s === 'pending') items.push({ kind: 'n', dk, id: 'nap', emoji: '✍️', name: 'NAPLAN writing (bonus)', qa: napQA(r.nap) });
   }
@@ -1691,7 +1694,7 @@ function pKidCheck(kid) {
     <details ${od[kid.id + 't'] ? 'open' : ''} data-details="${kid_}t"><summary>All of today's jobs</summary><div class="clist">${rows || '<p class="sub">No jobs today</p>'}</div></details>
     ${hasW ? `<details ${od[kid.id + 'b'] !== false && nWrite ? 'open' : ''} data-details="${kid_}b"><summary>📚 Books & ✍️ writing today (${nWrite})</summary><div class="clist">${wrows || '<p class="sub">Nothing written yet today.</p>'}</div>
       <p class="small-print">Every confirmed book gives +${D.rules.bookTokens} (the first one also completes Reading). NAPLAN writing gives +${D.rules.napTokens}.</p></details>` : ''}
-    <details ${od[kid.id + 'x'] ? 'open' : ''} data-details="${kid_}x"><summary>Bonus jobs today</summary><div class="clist">${xrows}</div></details>
+    <details ${od[kid.id + 'x'] ? 'open' : ''} data-details="${kid_}x"><summary>Bonus challenge today</summary><div class="clist">${xrows}</div></details>
     <div class="btnrow"><button class="btn ghost small" data-act="ptab" data-tab="tokens">🪙 Adjust ${esc(kid.name)}'s tokens</button></div>
   </section>`;
 }
@@ -1715,13 +1718,7 @@ function pTasks() {
     ${kid.tasks.map((t, i) => taskEditor(kid, t, i)).join('') || '<p class="sub" style="padding:16px 0">No jobs yet.</p>'}
     <div class="btnrow"><button class="btn primary" data-act="addtask">➕ Add a daily job</button><button class="btn ghost" data-act="addtask" data-type="weekly">➕ Add a weekly job</button></div>
   </section>
-  <section class="card"><h2>⭐ Bonus jobs (both kids)</h2><p class="sub">Optional extra jobs. Each confirmed one earns the tokens shown (🪙).</p>
-    ${D.extras.map((x, i) => `<div class="erow" data-xed="${esc(x.id)}"><input class="emoji-in" data-edit="x.emoji" data-i="${i}" value="${esc(x.emoji)}" maxlength="8" aria-label="Emoji">
-      <div class="ed-main"><input data-edit="x.name" data-i="${i}" value="${esc(x.name)}" maxlength="40" aria-label="Name">
-        <div class="ed-opts"><label>🪙 <input type="number" min="0" max="${MAX_TOKENS_PER_JOB}" inputmode="numeric" data-edit="x.tokens" data-i="${i}" value="${tokOf(x)}" aria-label="Tokens"> tokens</label></div></div>
-      <button class="btn danger" data-act="delextra" data-i="${i}" aria-label="Remove">🗑</button></div>`).join('')}
-    <div class="btnrow"><button class="btn primary" data-act="addextra">➕ Add a bonus job</button></div>
-  </section>`;
+  <section class="card"><h2>🌟 Bonus challenge</h2><p class="sub">Fixed family challenges: Fold clothes (+1), Set up dinner + put used dishes in the dishwasher (+2), and Finished one more Sam book/set (+2). Each is parent-confirmed; tokens are added, never deducted.</p></section>`;
 }
 function taskEditor(kid, t, i) {
   const n = kid.tasks.length;
@@ -1769,7 +1766,7 @@ function pTokens() {
   }).join('');
   return `<section class="card"><h2>🪙 How tokens work</h2>
       <p class="sub" style="font-size:19px">Every job earns tokens once a grown-up confirms it (change the numbers per job in 📝 Jobs & tokens). Tokens only go up for good work — they are never taken away as a punishment. Kids save them for wishes that you approve in 🎯 Wishes. Jobs don't gate anything any more — they simply earn tokens.</p>
-      ${stepper('bookTokens', 'Tokens per book', 'Each confirmed book + 3 questions (the first book too)', 1, R.bookTokens)}
+      ${stepper('bookTokens', 'Tokens per book', 'Each confirmed book + 3 questions (first book completes Reading)', 1, R.bookTokens)}
       ${stepper('napTokens', 'NAPLAN writing', 'For the confirmed daily writing', 1, R.napTokens)}
       ${D.kids.map(k => stepper('kid.allDone', `${esc(k.avatar)} ${esc(k.name)}: all must-dos done`, 'Bonus once every must-do job today is confirmed', 1, k.allDone, 'tokens', `data-kid="${esc(k.id)}"`)).join('')}
       ${stepper('maxGoals', 'Wishes at a time', 'How many personal wishes each child can have going (1–3)', 1, R.maxGoals, R.maxGoals === 1 ? 'wish' : 'wishes')}
