@@ -91,7 +91,7 @@ h1,h2,h3,p{margin:0}
 .kgrid{display:grid;gap:22px;grid-template-columns:minmax(0,1fr) 370px;grid-template-areas:"tasks wallet";grid-template-rows:auto;align-items:start}
 .tasks-col{grid-area:tasks}
 .wallet{grid-area:wallet}
-.extras{grid-area:extras}
+.extras{grid-area:auto}
 .sec{font-size:26px;font-weight:900;margin:4px 4px 12px;display:flex;align-items:center;gap:10px}
 .tasks+.sec{margin-top:22px}
 .tasks{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
@@ -414,8 +414,8 @@ textarea.kt.napbox{min-height:330px}
    (localStorage). The only network use is the optional Google Drive upload
    of confirmed reading & writing (v3.1, see partD) to the family's own Apps Script link.
    ========================================================= */
-const APP_VERSION = '3.4';
-const APP_TAG = '3.4-reading-bonuses-drive';
+const APP_VERSION = '3.4.1';
+const APP_TAG = '3.4.1-layout-fix';
 const DATA_VERSION = 5; // v3: tokens + wishes/goals replace the old screen-time reward
 const READING_NOTE_V2 = 'Read for 20 minutes, then answer questions about your book';
 const MAX_BOOKS_PER_DAY = 6;
@@ -1070,9 +1070,9 @@ function viewKid() {
         <div class="tasks">${daily.map(t => taskCard(kid, t, dk)).join('') || '<div class="empty">🎈 No jobs today!</div>'}</div>
         ${weekly.length ? `<h2 class="sec">📅 This week</h2><div class="tasks">${weekly.map(t => taskCard(kid, t, dk)).join('')}</div>` : ''}
         ${challengeSection(kid, dk)}
+        ${bonusChallengeCard(kid, dk, p)}
       </main>
       ${walletCard(kid, p)}
-      ${bonusChallengeCard(kid, dk, p)}
     </div>
   </div>`;
 }
